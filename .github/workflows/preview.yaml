@@ -1,0 +1,63 @@
+name: Terraform Docs Preview
+
+on:
+  workflow_call:
+    inputs:
+      docs_path:
+        description: 'Path to the documentation directory'
+        required: false
+        default: 'docs'
+        type: string
+      changed_files:
+        description: 'JSON list of changed markdown files'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  preview-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout action repository
+        uses: actions/checkout@v6
+        with:
+          repository: Sho2010/terraform-docs-preview-action
+          path: .preview-action
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: .preview-action/package-lock.json
+
+      - name: Install dependencies
+        working-directory: .preview-action
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: .preview-action
+        run: npx playwright install chromium
+
+      - name: Checkout calling repository
+        uses: actions/checkout@v6
+        with:
+          path: target-repo
+
+      - name: Generate Previews
+        working-directory: .preview-action
+        run: |
+          mkdir -p screenshots
+          echo '${{ inputs.changed_files }}' | jq -r '.[]' | while read -r file; do
+            node scripts/preview-docs.js "../target-repo/$file" || echo "Failed: $file"
+          done
+
+      - name: Upload Screenshots
+        uses: actions/upload-artifact@v5
+        with:
+          name: doc-previews
+          path: .preview-action/screenshots/
+          retention-days: 30

@@ -1,0 +1,15 @@
+{
+  "name": "terraform-docs-preview-action",
+  "version": "1.0.0",
+  "description": "GitHub Action for previewing Terraform documentation",
+  "private": false,
+  "scripts": {
+    "preview": "node scripts/preview-docs.js"
+  },
+  "dependencies": {
+    "playwright": "^1.40.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
