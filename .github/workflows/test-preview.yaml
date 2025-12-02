@@ -1,0 +1,41 @@
+name: Test Documentation Preview
+
+on:
+  pull_request:
+    paths:
+      - 'examples/docs/**/*.md'
+  push:
+    branches:
+      - main
+    paths:
+      - 'examples/docs/**/*.md'
+  workflow_dispatch:  # Allow manual trigger for testing
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      docs_files: ${{ steps.filter.outputs.docs_files }}
+      has_changes: ${{ steps.filter.outputs.docs }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Detect changed files
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          list-files: json
+          filters: |
+            docs:
+              - 'examples/docs/**/*.md'
+
+  preview:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.has_changes == 'true'
+    uses: ./.github/workflows/preview.yaml
+    with:
+      changed_files: ${{ needs.detect-changes.outputs.docs_files }}
