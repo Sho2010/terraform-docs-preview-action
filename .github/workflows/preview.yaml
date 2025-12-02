@@ -61,3 +61,59 @@ jobs:
           name: doc-previews
           path: .preview-action/screenshots/
           retention-days: 30
+
+      - name: Create Comment with Images
+        if: github.event_name == 'pull_request'
+        working-directory: target-repo
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Check if screenshots exist
+          if [ ! "$(ls -A ../.preview-action/screenshots/*.png 2>/dev/null)" ]; then
+            echo "No screenshots found"
+            exit 0
+          fi
+
+          # Start building comment body
+          cat > comment.md << 'EOF'
+          ## 📸 Terraform Documentation Preview
+
+          Generated documentation preview screenshots.
+
+          EOF
+
+          # Add each screenshot to the comment
+          cd ../.preview-action/screenshots
+          for screenshot in *.png; do
+            # Convert filename to readable name
+            doc_name=$(echo "$screenshot" | sed 's/.png$//' | sed 's/-/ /g' | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) tolower(substr($i,2));}1')
+
+            echo "### $doc_name" >> ../../target-repo/comment.md
+            echo "" >> ../../target-repo/comment.md
+            echo "![$doc_name]($screenshot)" >> ../../target-repo/comment.md
+            echo "" >> ../../target-repo/comment.md
+          done
+          cd ../../target-repo
+
+          # Add footer
+          cat >> comment.md << 'EOF'
+
+          ---
+
+          📥 **Download Full Quality**: [Workflow Artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+          *Preview generated using [Terraform Registry doc-preview](https://registry.terraform.io/tools/doc-preview)*
+          EOF
+
+          # Check if comment already exists
+          existing_comment_id=$(gh pr view ${{ github.event.pull_request.number }} --json comments --jq '.comments[] | select(.body | contains("📸 Terraform Documentation Preview")) | .id' | head -1)
+
+          if [ -n "$existing_comment_id" ]; then
+            echo "Updating existing comment (ID: $existing_comment_id)"
+            gh pr comment ${{ github.event.pull_request.number }} --edit-last --body-file comment.md
+          else
+            echo "Creating new comment"
+            gh pr comment ${{ github.event.pull_request.number }} --body-file comment.md
+          fi
+
+          echo "✓ Comment posted successfully"
