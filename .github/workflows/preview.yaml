@@ -27,6 +27,9 @@ jobs:
           repository: Sho2010/terraform-docs-preview-action
           path: .preview-action
 
+      - name: Setup github-comment
+        uses: shmokmt/actions-setup-github-comment@v2.1.0
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
@@ -55,9 +58,46 @@ jobs:
             node scripts/preview-docs.js "../target-repo/$file" || echo "Failed: $file"
           done
 
-      - name: Upload Screenshots
+      # TODO: support multi object storage
+
+      - name: Upload Screenshots to Artifact
+        if: github.event_name == 'pull_request'
+        id: upload-artifact-screenshots
         uses: actions/upload-artifact@v5
         with:
           name: doc-previews
           path: .preview-action/screenshots/
           retention-days: 30
+
+      # - name: Upload Screenshots to S3
+      #   if: github.event_name == 'pull_request' && ( inputs.storage_type == 's3' || inputs.storage_type == 'r2' )
+      #   id: upload-s3-screenshots
+      #   uses: actions/upload-artifact@v5
+      #   with:
+      #     name: doc-previews
+      #     path: .preview-action/screenshots/
+      #     retention-days: 30
+
+      - name: Post Preview Comment
+        if: github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Format changed files list
+          CHANGED_FILES=$(echo '${{ inputs.changed_files }}' | jq -r '.[] | "- \(.)"' | tr '\n' '\n')
+
+          # Get artifact URL
+          ARTIFACT_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          # Count generated screenshots
+          PREVIEW_COUNT=$(find .preview-action/screenshots -type f -name "*.png" 2>/dev/null | wc -l)
+
+          # Build preview results message
+          PREVIEW_RESULTS="Generated ${PREVIEW_COUNT} preview(s) for the changed documentation files."
+
+          github-comment post \
+            -config .preview-action/.github/github-comment.yaml \
+            -k preview-docs \
+            -var "preview_results:${PREVIEW_RESULTS}" \
+            -var "artifact_url:${ARTIFACT_URL}" \
+            -var "changed_files:${CHANGED_FILES}"

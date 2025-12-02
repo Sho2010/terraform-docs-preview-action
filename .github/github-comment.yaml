@@ -1,0 +1,33 @@
+post:
+  preview-docs:
+    template: |
+      ## 📄 Terraform Docs Preview
+
+      {{if .Vars.preview_results}}{{.Vars.preview_results}}{{else}}Preview generation completed.{{end}}
+
+      {{if .Vars.artifact_url}}
+      [View all screenshots in artifacts]({{.Vars.artifact_url}})
+      {{end}}
+
+      <details>
+      <summary>Changed files</summary>
+
+      {{if .Vars.changed_files}}
+      {{.Vars.changed_files}}
+      {{else}}
+      No changed files detected.
+      {{end}}
+
+      </details>
+
+  preview-error:
+    template: |
+      ## ❌ Terraform Docs Preview Failed
+
+      {{if .Vars.error_message}}
+      ```
+      {{.Vars.error_message}}
+      ```
+      {{end}}
+
+      Please check the workflow logs for more details.
