@@ -1,5 +1,5 @@
 ---
-page_title: "test_resource Resource - terraform-provider-test"
+page_title: "TEEEEEEEEEEST test_resource Resource - terraform-provider-test"
 subcategory: ""
 description: |-
   Test resource for documentation preview
