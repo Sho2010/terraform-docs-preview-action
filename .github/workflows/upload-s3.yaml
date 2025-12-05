@@ -31,6 +31,10 @@ on:
         type: string
         default: "false"
         description: "Whether to allow uploads from forked repositories"
+      action_ref:
+        type: string
+        required: false
+        description: "Git ref (commit SHA, branch, or tag) of this action repository to use. Defaults to github.action_ref if called externally, or must be explicitly provided if called from same repository."
     outputs:
       urls:
         value: ${{ jobs.upload.outputs.urls }}
@@ -51,6 +55,22 @@ jobs:
       urls: ${{ steps.gen.outputs.urls }}
 
     steps:
+      - name: Checkout action repository
+        uses: actions/checkout@v6
+        with:
+          repository: Sho2010/terraform-docs-preview-action
+          ref: ${{ inputs.action_ref || github.action_ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          # cache: npm
+          # cache-dependency-path: .preview-action/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
       - name: Configure AWS Credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v5
         with:
@@ -71,17 +91,14 @@ jobs:
           EXPIRES_IN: ${{ inputs.expires_in }}
         run: |
           set -eu
-          urls=()
 
-          while IFS= read -r file; do
-            rel="${file#screenshots/}"
-            key="${PREFIX}/${GITHUB_REPOSITORY}/${GITHUB_RUN_ID}/${rel}"
+          # Run the Node.js script and capture output
+          output=$(node scripts/upload-to-s3.js)
 
-            aws s3 cp "$file" "s3://${BUCKET}/${key}"
+          # Extract the JSON array from the last line (the script outputs JSON at the end)
+          urls=$(echo "$output" | tail -n 1)
 
-            url=$(aws s3 presign "s3://${BUCKET}/${key}" --expires-in "${EXPIRES_IN}")
-            urls+=("$url")
-          done < <(find screenshots -type f -name "*.png")
+          echo "urls=${urls}" >> "$GITHUB_OUTPUT"
 
-          json=$(printf '%s\n' "${urls[@]}" | jq -R . | jq -s .)
-          echo "urls=${json}" >> "$GITHUB_OUTPUT"
+          # Print the full output for debugging
+          echo "$output"

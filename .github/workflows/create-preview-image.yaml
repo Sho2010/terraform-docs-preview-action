@@ -11,6 +11,10 @@ on:
         type: string
         required: true
         description: 'changed files. example JSON array: ["docs/foo.md", ...]'
+      action_ref:
+        type: string
+        required: false
+        description: "Git ref (commit SHA, branch, or tag) of this action repository to use. Defaults to github.action_ref if called externally, or must be explicitly provided if called from same repository."
     outputs:
       artifact_name:
         value: terraform-docs-screenshots
@@ -28,18 +32,19 @@ jobs:
 
     steps:
       - name: Checkout target repo (caller)
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           path: target-repo
 
       - name: Checkout preview-action repo
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           repository: Sho2010/terraform-docs-preview-action
+          ref: ${{ inputs.action_ref || github.action_ref }}
           path: .preview-action
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
