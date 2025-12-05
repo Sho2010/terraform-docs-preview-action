@@ -1,0 +1,78 @@
+name: Terraform Docs Generate Screenshots
+
+on:
+  workflow_call:
+    inputs:
+      docs_path:
+        type: string
+        default: "docs"
+        description: "Path to the documentation directory"
+      changed_files:
+        type: string
+        required: true
+        description: 'changed files. example JSON array: ["docs/foo.md", ...]'
+    outputs:
+      artifact_name:
+        value: terraform-docs-screenshots
+      preview_count:
+        value: ${{ jobs.generate.outputs.preview_count }}
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    outputs:
+      preview_count: ${{ steps.count.outputs.count }}
+
+    steps:
+      - name: Checkout target repo (caller)
+        uses: actions/checkout@v5
+        with:
+          path: target-repo
+
+      - name: Checkout preview-action repo
+        uses: actions/checkout@v5
+        with:
+          repository: Sho2010/terraform-docs-preview-action
+          path: .preview-action
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: .preview-action/package-lock.json
+
+      - name: Install deps & Playwright
+        working-directory: .preview-action
+        run: |
+          set -eu
+          npm ci
+          npx playwright install chromium
+
+      - name: Generate screenshots
+        working-directory: .preview-action
+        env:
+          CHANGED_FILES: ${{ inputs.changed_files }}
+        run: |
+          set -eu
+          mkdir -p screenshots
+          echo "${CHANGED_FILES}" | jq -r '.[]' | while read -r file; do
+            node scripts/preview-docs.js "../target-repo/$file" || echo "Failed: $file"
+          done
+
+      - name: Count screenshots
+        id: count
+        run: |
+          set -eu
+          count=$(find .preview-action/screenshots -type f -name "*.png" 2>/dev/null | wc -l)
+          echo "count=${count}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload screenshots as artifact (internal use only)
+        uses: actions/upload-artifact@v5
+        with:
+          name: terraform-docs-screenshots
+          path: .preview-action/screenshots
+          retention-days: 3

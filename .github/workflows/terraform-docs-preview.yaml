@@ -1,0 +1,96 @@
+name: Terraform Docs Preview
+
+on:
+  workflow_call:
+    inputs:
+      docs_path:
+        type: string
+        default: "docs"
+        description: "Path to the documentation directory"
+      aws_region:
+        type: string
+        required: true
+        description: "AWS region for S3 bucket"
+      role_to_assume:
+        type: string
+        required: true
+        description: "ARN of the IAM role to assume for AWS credentials"
+      bucket:
+        type: string
+        required: true
+        description: "S3 bucket name for storing preview images"
+      key_prefix:
+        type: string
+        default: "terraform-docs-previews"
+        description: "Prefix for S3 object keys"
+      expires_in:
+        type: string
+        default: "3600"
+        description: "Expiration time in seconds for presigned URLs"
+      allow_fork:
+        type: string
+        default: "false"
+        description: "Whether to allow uploads from forked repositories"
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.changed.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - id: changed
+        env:
+          DOCS_PATH: ${{ inputs.docs_path }}
+        run: |
+          set -eu
+          base="${GITHUB_BASE_REF:-origin/main}"
+          files=$(git diff --name-only "${base}...HEAD" || true)
+          files=$(echo "${files}" | grep "^${DOCS_PATH%/}/.*\.md$" || true)
+
+          if [ -z "${files}" ]; then
+            json="[]"
+          else
+            json=$(printf '%s\n' "${files}" | jq -R . | jq -s .)
+          fi
+
+          echo "changed=${json}" >> "$GITHUB_OUTPUT"
+
+  generate:
+    needs: detect
+    if: needs.detect.outputs.changed != '[]'
+    uses: ./.github/workflows/create-preview-image.yaml
+    with:
+      docs_path: ${{ inputs.docs_path }}
+      changed_files: ${{ needs.detect.outputs.changed }}
+
+  upload-s3:
+    needs: generate
+    if: needs.generate.result == 'success'
+    uses: ./.github/workflows/upload-s3.yaml
+    with:
+      artifact_name: terraform-docs-screenshots
+      aws_region: ${{ inputs.aws_region }}
+      role_to_assume: ${{ inputs.role_to_assume }}
+      bucket: ${{ inputs.bucket }}
+      key_prefix: ${{ inputs.key_prefix }}
+      expires_in: ${{ inputs.expires_in }}
+      allow_fork: ${{ inputs.allow_fork }}
+
+  comment:
+    needs: [detect, generate, upload-s3]
+    if: |
+      needs.detect.outputs.changed != '[]' &&
+      needs.generate.result == 'success' &&
+      needs.upload-s3.result == 'success'
+    uses: ./.github/workflows/preview-comment.yaml
+    with:
+      urls: ${{ needs.upload-s3.outputs.urls }}
+      preview_count: ${{ needs.generate.outputs.preview_count }}
+      changed_files: ${{ needs.detect.outputs.changed }}
