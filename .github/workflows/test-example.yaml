@@ -4,9 +4,6 @@ on:
   pull_request:
     paths:
       - "examples/**/*.md"
-  push:
-    paths:
-      - "examples/**/*.md"
 
 permissions:
   id-token: write
