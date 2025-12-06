@@ -1,3 +1,9 @@
+*.log
+.env
+.env.local
+*.swp
+*.swo
+
 node_modules/
 screenshots/
 test-results/
