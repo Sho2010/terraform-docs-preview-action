@@ -23,57 +23,40 @@ on:
       - 'docs/**/*.md'
 
 permissions:
+  id-token: write    # Required for OIDC authentication
   contents: read
   pull-requests: write
 
 jobs:
-  detect-changes:
-    runs-on: ubuntu-latest
-    outputs:
-      docs_files: ${{ steps.filter.outputs.docs_files }}
-    steps:
-      - uses: actions/checkout@v6
-      - uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          list-files: json
-          filters: |
-            docs:
-              - 'docs/**/*.md'
-
-  preview:
-    needs: detect-changes
-    if: needs.detect-changes.outputs.docs_files != '[]'
-    uses: Sho2010/terraform-docs-preview-action/.github/workflows/preview.yaml@main
+  docs-preview:
+    uses: Sho2010/terraform-docs-preview-action/.github/workflows/terraform-docs-preview.yaml@main
     with:
-      changed_files: ${{ needs.detect-changes.outputs.docs_files }}
-      # docs_path: 'documentation'  # Optional: customize the docs directory (default: 'docs')
+      docs_path: docs
+      aws_region: ap-northeast-1
+      role_to_assume: ${{ vars.ROLE_TO_ASSUME }}
+      bucket: ${{ vars.BUCKET }}
+      key_prefix: terraform-docs-previews
+      expires_in: "3600"
+      allow_fork: "false"
+      use_public_url: "true"  # REQUIRED when using OIDC authentication
 ```
 
 ## Inputs
 
-### Core Inputs
-
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
 | `docs_path` | Path to the documentation directory | No | `docs` |
-| `changed_files` | JSON list of changed markdown files | Yes | - |
-
-### Storage-Specific Inputs
-
-When using the full `terraform-docs-preview.yaml` workflow with storage backend (e.g., S3):
-
-| Input | Description | Required | Default |
-|-------|-------------|----------|---------|
 | `aws_region` | AWS region for S3 bucket | Yes | - |
 | `role_to_assume` | ARN of the IAM role to assume for AWS credentials | Yes | - |
 | `bucket` | S3 bucket name for storing preview images | Yes | - |
 | `key_prefix` | Prefix for S3 object keys | No | `terraform-docs-previews` |
 | `expires_in` | Expiration time in seconds for presigned URLs (ignored when `use_public_url` is true) | No | `3600` |
-| `use_public_url` | Generate public S3 URLs instead of presigned URLs. Requires bucket policy for public read access. | No | `false` |
-| `allow_fork` | Whether to allow uploads from forked repositories | No | `false` |
+| `use_public_url` | Generate public S3 URLs instead of presigned URLs. **Must be set to `"true"` when using OIDC authentication.** Requires bucket policy for public read access. | No | `"false"` |
+| `allow_fork` | Whether to allow uploads from forked repositories. Set to `"true"` to enable. | No | `"false"` |
 
-**Note**: Storage-specific inputs vary depending on the storage provider you choose.
+**Important Notes:**
+- The workflow automatically detects changed markdown files in the specified `docs_path` directory
+- ⚠️ When using OIDC authentication (recommended), you **must** set `use_public_url: "true"` - presigned URLs will not work with temporary OIDC credentials
 
 ### Custom Documentation Directory
 
@@ -85,42 +68,43 @@ on:
     paths:
       - 'documentation/**/*.md'
 
-jobs:
-  detect-changes:
-    runs-on: ubuntu-latest
-    outputs:
-      docs_files: ${{ steps.filter.outputs.docs_files }}
-    steps:
-      - uses: actions/checkout@v6
-      - uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          list-files: json
-          filters: |
-            docs:
-              - 'documentation/**/*.md'
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
 
-  preview:
-    needs: detect-changes
-    if: needs.detect-changes.outputs.docs_files != '[]'
-    uses: Sho2010/terraform-docs-preview-action/.github/workflows/preview.yaml@main
+jobs:
+  docs-preview:
+    uses: Sho2010/terraform-docs-preview-action/.github/workflows/terraform-docs-preview.yaml@main
     with:
-      changed_files: ${{ needs.detect-changes.outputs.docs_files }}
-      docs_path: 'documentation'
+      docs_path: documentation
+      aws_region: ap-northeast-1
+      role_to_assume: ${{ vars.ROLE_TO_ASSUME }}
+      bucket: ${{ vars.BUCKET }}
+      key_prefix: terraform-docs-previews
+      expires_in: "3600"
+      allow_fork: "false"
+      use_public_url: "true"
 ```
 
 ## How It Works
 
-1. **Change Detection**: Detects changed `.md` files in pull requests
-2. **Screenshot Generation**: For each changed file:
+The workflow consists of multiple jobs that work together:
+
+1. **Change Detection** (`detect` job): Uses `tj-actions/changed-files` to detect changed `.md` files in the specified `docs_path` directory
+2. **Screenshot Generation** (`generate` job): For each changed file:
    - Reads the markdown content
    - Navigates to the Terraform Registry doc-preview tool
    - Pastes the content into the preview
-   - Captures a screenshot
-3. **Storage Upload**: Uploads screenshots to your chosen object storage backend (pluggable)
-4. **PR Comment**: Posts preview URLs to the pull request for easy review
+   - Captures a screenshot using Playwright
+   - Stores screenshots as GitHub Actions artifacts
+3. **Storage Upload** (`upload-s3` job):
+   - Downloads the screenshot artifacts
+   - Uploads them to S3 bucket
+   - Generates either presigned URLs or public URLs based on `use_public_url` setting
+4. **PR Comment** (`comment` job): Posts preview image URLs to the pull request for easy review
 
-The architecture is designed with a **pluggable storage layer**, allowing you to choose or implement your preferred object storage provider.
+The workflow automatically handles the entire pipeline and only runs when markdown files are actually changed.
 
 ## Examples
 
@@ -128,75 +112,75 @@ See the [examples](examples/) directory for sample documentation files and their
 - [Resource documentation example](examples/docs/resource-example.md)
 - [Data source documentation example](examples/docs/data-source-example.md)
 
-## Storage Backends
+## Configuration
 
-This action is designed with a **pluggable storage architecture**, allowing you to use different object storage providers for hosting preview images.
+### AWS S3 Setup
 
-### Supported Storage Providers
+This action requires AWS credentials to upload preview images to S3. The recommended approach is to use OIDC (OpenID Connect) for secure, keyless authentication.
 
-The action provides reusable workflows for different storage backends:
+> **⚠️ CRITICAL**: When using OIDC authentication (recommended), presigned URLs **will not work**. You **must** configure your workflow with `use_public_url: "true"` and set up a bucket policy for public read access. See the "Public URL vs Presigned URL" section below for details.
 
-- **AWS S3**: `.github/workflows/upload-s3.yaml` (reference implementation)
-- **Other providers**: You can implement custom upload workflows following the storage interface contract
+#### Required AWS Resources
 
-### Storage Interface Contract
+1. **S3 Bucket**: Create a bucket to store preview images
+2. **IAM Role**: Create an IAM role with OIDC trust relationship for GitHub Actions
+3. **Bucket Policy** (if using `use_public_url: "true"`): Configure bucket policy to allow public read access
 
-Any storage backend implementation must follow this contract:
+#### IAM Role Permissions
 
-**Inputs:**
-- `artifact_name`: Name of the artifact containing screenshots (string, required)
-- Provider-specific configuration (credentials, bucket/container names, regions, etc.)
+The IAM role needs the following permissions:
 
-**Outputs:**
-- `urls`: JSON array of accessible URLs for preview images (string)
-
-**Security:**
-- Should block uploads from forked PRs by default (configurable via `allow_fork` input)
-
-### Using AWS S3 (Reference Implementation)
-
-The `terraform-docs-preview.yaml` workflow includes S3 integration:
-
-```yaml
-jobs:
-  preview:
-    uses: Sho2010/terraform-docs-preview-action/.github/workflows/terraform-docs-preview.yaml@main
-    with:
-      changed_files: ${{ needs.detect-changes.outputs.docs_files }}
-      docs_path: 'docs'
-      aws_region: 'ap-northeast-1'
-      role_to_assume: 'arn:aws:iam::123456789012:role/github-actions-role'
-      bucket: 'my-preview-bucket'
-      key_prefix: 'terraform-docs-previews'
-      expires_in: '3600'  # 1 hour
-      allow_fork: 'false'
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:GetObject"
+      ],
+      "Resource": "arn:aws:s3:::your-bucket-name/terraform-docs-previews/*"
+    }
+  ]
+}
 ```
 
-### Implementing Custom Storage Backends
+#### Public URL vs Presigned URL
 
-To implement a custom storage provider (e.g., Google Cloud Storage, Azure Blob, Cloudflare R2):
+> **⚠️ IMPORTANT**: When using OIDC authentication (recommended), presigned URLs **will not work** because OIDC provides temporary credentials that expire before the presigned URL can be used. **You must use `use_public_url: "true"`** when authenticating with OIDC.
 
-1. Create a new workflow file (e.g., `.github/workflows/upload-gcs.yaml`)
-2. Implement the storage interface contract (inputs and outputs as specified above)
-3. Update your orchestration workflow to call your custom upload workflow instead of `upload-s3.yaml`
+- **Presigned URL** (`use_public_url: "false"`, default): Temporary URLs that expire after `expires_in` seconds.
+  - ⚠️ **Does not work with OIDC authentication** - requires long-lived AWS credentials
+  - Only use this if you're using AWS access keys (not recommended for security reasons)
 
-Example workflow structure:
+- **Public URL** (`use_public_url: "true"`, **recommended**): Permanent public URLs.
+  - ✅ **Works with OIDC authentication**
+  - Requires bucket policy for public read access (see below)
 
-```yaml
-name: Upload to Custom Storage
-
-on:
-  workflow_call:
-    inputs:
-      artifact_name:
-        type: string
-        required: true
-        description: "Name of the artifact containing screenshots"
-      # Add your provider-specific inputs here
-    outputs:
-      urls:
-        value: ${{ jobs.upload.outputs.urls }}
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PublicReadGetObject",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::your-bucket-name/terraform-docs-previews/*"
+    }
+  ]
+}
 ```
+
+### GitHub Repository Setup
+
+Store your AWS configuration as repository variables or secrets:
+
+- `ROLE_TO_ASSUME`: ARN of the IAM role (e.g., `arn:aws:iam::123456789012:role/github-actions-role`)
+- `BUCKET`: S3 bucket name
+
+You can use GitHub repository variables for non-sensitive values or secrets for sensitive information.
 
 ## Local Testing
 
