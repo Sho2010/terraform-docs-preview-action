@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - "examples/**/*.md"
+  push:
+    paths:
+      - "examples/**/*.md"
 
 permissions:
   id-token: write
@@ -21,3 +24,4 @@ jobs:
       key_prefix: terraform-docs-previews
       expires_in: "3600"
       allow_fork: "false"
+      use_public_url: "true"
