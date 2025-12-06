@@ -1,0 +1,109 @@
+name: Terraform Docs Preview Upload to S3
+
+on:
+  workflow_call:
+    inputs:
+      artifact_name:
+        type: string
+        required: true
+        description: "Name of the artifact containing screenshots to upload"
+      aws_region:
+        type: string
+        required: true
+        description: "AWS region for S3 bucket"
+      role_to_assume:
+        type: string
+        required: true
+        description: "ARN of the IAM role to assume for AWS credentials"
+      bucket:
+        type: string
+        required: true
+        description: "S3 bucket name for storing preview images"
+      key_prefix:
+        type: string
+        default: "terraform-docs-previews"
+        description: "Prefix for S3 object keys"
+      expires_in:
+        type: string
+        default: "3600"
+        description: "Expiration time in seconds for presigned URLs (ignored when use_public_url is true)"
+      use_public_url:
+        type: string
+        default: "false"
+        description: "Generate public S3 URLs instead of presigned URLs. Requires bucket policy for public read access. Set to 'true' to enable."
+      allow_fork:
+        type: string
+        default: "false"
+        description: "Whether to allow uploads from forked repositories"
+      action_ref:
+        type: string
+        required: false
+        description: "Git ref (commit SHA, branch, or tag) of this action repository to use. Defaults to github.action_ref if called externally, or must be explicitly provided if called from same repository."
+    outputs:
+      urls:
+        value: ${{ jobs.upload.outputs.urls }}
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  upload:
+    # fork PR からの S3 書き込みをデフォルト deny
+    if: >
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.event.pull_request.base.repo.full_name ||
+      inputs.allow_fork == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      urls: ${{ steps.gen.outputs.urls }}
+
+    steps:
+      - name: Checkout action repository
+        uses: actions/checkout@v6
+        with:
+          repository: Sho2010/terraform-docs-preview-action
+          ref: ${{ inputs.action_ref || github.action_ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          # cache: npm
+          # cache-dependency-path: .preview-action/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ inputs.role_to_assume }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Download screenshots artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: screenshots
+
+      - name: Upload PNGs to S3 & generate URLs
+        id: gen
+        env:
+          BUCKET: ${{ inputs.bucket }}
+          PREFIX: ${{ inputs.key_prefix }}
+          EXPIRES_IN: ${{ inputs.expires_in }}
+          USE_PUBLIC_URL: ${{ inputs.use_public_url }}
+        run: |
+          set -eu
+
+          # Run the Node.js script and capture output
+          output=$(node scripts/upload-to-s3.js)
+
+          # Extract the JSON array from the last line (the script outputs JSON at the end)
+          urls=$(echo "$output" | tail -n 1)
+
+          echo "urls=${urls}" >> "$GITHUB_OUTPUT"
+
+          # Print the full output for debugging
+          echo "$output"

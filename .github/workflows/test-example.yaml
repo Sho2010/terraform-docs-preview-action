@@ -1,0 +1,24 @@
+name: Test PR Terraform Docs Preview
+
+on:
+  pull_request:
+    paths:
+      - "examples/**/*.md"
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  docs-preview:
+    uses: ./.github/workflows/terraform-docs-preview.yaml
+    with:
+      docs_path: examples
+      aws_region: ap-northeast-1
+      role_to_assume: ${{ vars.ROLE_TO_ASSUME }}
+      bucket: ${{ vars.BUCKET }}
+      key_prefix: terraform-docs-previews
+      expires_in: "3600"
+      allow_fork: "false"
+      use_public_url: "true"
