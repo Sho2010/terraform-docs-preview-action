@@ -10,6 +10,35 @@ A GitHub Actions reusable workflow for automatically previewing Terraform Provid
 - No Node.js dependencies required in your provider repository
 - **Pluggable storage backends**: Supports multiple object storage providers (AWS S3, Google Cloud Storage, Azure Blob Storage, Cloudflare R2, etc.)
 
+## Preview Examples
+
+See how your Terraform Provider documentation will look in the Terraform Registry:
+
+<table>
+<tr>
+<td width="50%">
+
+**Resource Documentation**
+
+![Resource Example](screenshots/resource-example.png)
+
+📄 [View source markdown](examples/docs/resource-example.md)
+
+</td>
+<td width="50%">
+
+**Data Source Documentation**
+
+![Data Source Example](screenshots/data-source-example.png)
+
+📄 [View source markdown](examples/docs/data-source-example.md)
+
+</td>
+</tr>
+</table>
+
+These preview images are automatically generated and posted as comments on your pull requests, making it easy for reviewers to see exactly how documentation changes will appear.
+
 ## Usage
 
 Create a workflow file in your Terraform Provider repository (e.g., `.github/workflows/doc-preview.yaml`):
