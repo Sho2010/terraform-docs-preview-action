@@ -1,0 +1,64 @@
+name: Terraform Docs Preview Comment
+
+on:
+  workflow_call:
+    inputs:
+      urls:
+        type: string
+        required: true
+        description: "JSON array of presigned URLs for preview images"
+      preview_count:
+        type: string
+        required: true
+        description: "Number of preview images generated"
+      changed_files:
+        type: string
+        required: true
+        description: "JSON array of changed documentation files"
+      pr_number:
+        type: string
+        required: false
+        description: "Pull request number (only available for PR events)"
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Parse URLs
+        id: parse_urls
+        run: |
+          urls='${{ inputs.urls }}'
+          formatted=$(echo "$urls" | jq -r '.[] | "- " + .')
+          echo "formatted<<EOF" >> $GITHUB_OUTPUT
+          echo "$formatted" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Parse changed files
+        id: parse_files
+        run: |
+          files='${{ inputs.changed_files }}'
+          formatted=$(echo "$files" | jq -r '.[] | "- " + .')
+          echo "formatted<<EOF" >> $GITHUB_OUTPUT
+          echo "$formatted" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Post PR comment
+        if: inputs.pr_number
+        uses: peter-evans/create-or-update-comment@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ inputs.pr_number }}
+          body: |
+            🖼 **Terraform Docs Preview**
+
+            **Previews:** `${{ inputs.preview_count }}`
+
+            **URLs:**
+            ${{ steps.parse_urls.outputs.formatted }}
+
+            **Changed files:**
+            ${{ steps.parse_files.outputs.formatted }}
