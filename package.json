@@ -8,8 +8,8 @@
   },
   "dependencies": {
     "playwright": "^1.40.0",
-    "@aws-sdk/client-s3": "^3.946.0",
-    "@aws-sdk/s3-request-presigner": "^3.946.0"
+    "@aws-sdk/client-s3": "^3.995.0",
+    "@aws-sdk/s3-request-presigner": "^3.995.0"
   },
   "engines": {
     "node": ">=24.0.0"
