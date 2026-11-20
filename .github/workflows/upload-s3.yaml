@@ -82,7 +82,7 @@ jobs:
           aws-region: ${{ inputs.aws_region }}
 
       - name: Download screenshots artifact
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.artifact_name }}
           path: screenshots
